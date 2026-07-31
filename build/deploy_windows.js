@@ -32,12 +32,13 @@ const STREMIO_RUNTIME_EXE = path.join(SOURCE_DIR, 'utils', 'windows', 'stremio-r
 const FFMPEG_FOLDER = path.join(SOURCE_DIR, 'utils', 'windows', 'ffmpeg');
 const MPV_FOLDER = path.join(SOURCE_DIR, 'utils', 'mpv', 'anime4k');
 const DEFAULT_SETTINGS_FOLDER = path.join(SOURCE_DIR, 'utils', 'stremio');
+const WEBMODS_FOLDER = path.join(SOURCE_DIR, 'utils', 'webmods');
 
 // Default Paths
-const DEFAULT_NSIS = 'C:\\Program Files (x86)\\NSIS\\makensis.exe';
+const DEFAULT_NSIS = 'C:\\Users\\anshu\\scoop\\shims\\makensis.exe';
 //VCPKG
 const VCPKG_TRIPLET = ARCH === 'x86' ? 'x86-windows-static' : 'x64-windows-static';
-const VCPKG_CMAKE = 'G:\\Documents\\Github\\vcpkg\\scripts\\buildsystems\\vcpkg.cmake';
+const VCPKG_CMAKE = 'C:\\Users\\anshu\\vcpkg\\scripts\\buildsystems\\vcpkg.cmake';
 
 // ---------------------------------------------------------------------
 // Main
@@ -90,6 +91,7 @@ const VCPKG_CMAKE = 'G:\\Documents\\Github\\vcpkg\\scripts\\buildsystems\\vcpkg.
         copyFolderContents(FFMPEG_FOLDER, DIST_DIR);
         copyFolderContentsPreservingStructure(MPV_FOLDER, DIST_DIR);
         copyFolderContentsPreservingStructure(DEFAULT_SETTINGS_FOLDER, CONFIG_DIR);
+        copyFolderContentsPreservingStructure(WEBMODS_FOLDER, path.join(CONFIG_DIR, 'webmods'));
 
         console.log('\n=== dist\\win preparation complete. ===');
 
@@ -256,7 +258,8 @@ function buildPortableZip() {
     // Common 7-Zip paths
     const common7zPaths = [
         'C:\\Program Files\\7-Zip\\7z.exe',
-        'C:\\Program Files (x86)\\7-Zip\\7z.exe'
+        'C:\\Program Files (x86)\\7-Zip\\7z.exe',
+        'C:\\Users\\anshu\\scoop\\shims\\7z.exe'
     ];
 
     // Find 7-Zip executable

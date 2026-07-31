@@ -49,8 +49,6 @@ static void SetDiscordWatchingPresence(
     DiscordRichPresence discordPresence{};
     memset(&discordPresence, 0, sizeof(discordPresence));
 
-    discordPresence.type = DISCORD_ACTIVITY_TYPE_WATCHING;
-
     // Common fields (required)
     discordPresence.details = args[2].c_str(); // Title
     discordPresence.largeImageKey = args[7].c_str();
@@ -85,17 +83,6 @@ static void SetDiscordWatchingPresence(
         }
     }
 
-    // Buttons setup (optional)
-    if (!args[11].empty()) {
-        discordPresence.button1Label = "More Details";
-        discordPresence.button1Url = args[11].c_str();
-    }
-
-    if (!args[12].empty()) {
-        discordPresence.button2Label = "Watch on Stremio";
-        discordPresence.button2Url = args[12].c_str();
-    }
-
     Discord_UpdatePresence(&discordPresence);
 }
 
@@ -109,7 +96,6 @@ static void SetDiscordMetaDetailPresence(const std::vector<std::string>& args) {
     DiscordRichPresence discordPresence{};
     memset(&discordPresence, 0, sizeof(discordPresence));
 
-    discordPresence.type = DISCORD_ACTIVITY_TYPE_WATCHING;
     discordPresence.details = args[2].c_str(); // Title (show/movie)
     discordPresence.largeImageKey = args[3].c_str();
     discordPresence.largeImageText = args[2].c_str();
@@ -127,7 +113,6 @@ static void SetDiscordDiscoverPresence(const char *const details, const char *co
 
     DiscordRichPresence discordPresence{};
     memset(&discordPresence, 0, sizeof(discordPresence));
-    discordPresence.type = DISCORD_ACTIVITY_TYPE_WATCHING;
     discordPresence.state = state;
     discordPresence.details = details;
     discordPresence.largeImageKey = "https://raw.githubusercontent.com/Stremio/stremio-web/refs/heads/development/images/icon.png";
