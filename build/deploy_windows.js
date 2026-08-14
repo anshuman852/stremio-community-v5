@@ -58,10 +58,32 @@ const VCPKG_CMAKE = 'C:\\Users\\anshu\\vcpkg\\scripts\\buildsystems\\vcpkg.cmake
 
         console.log(`\n=== Running CMake in cmake-build-${debugBuild ? "Debug" : "Release"} ===`);
         process.chdir(BUILD_DIR);
-        execSync(
-            `cmake -G Ninja -DCMAKE_BUILD_TYPE=${debugBuild ? "Debug" : "Release"} -DCMAKE_TOOLCHAIN_FILE=${VCPKG_CMAKE} -DVCPKG_TARGET_TRIPLET=${VCPKG_TRIPLET} ..`,
-            { stdio: 'inherit' }
-        );
+
+        // Optional compiler launcher (e.g. sccache) set by build_msvc.bat. The
+        // configure command is left untouched when the launcher is unset.
+        const launcher = process.env.STREMIO_COMPILER_LAUNCHER || '';
+        const configureArgs = [
+            'cmake',
+            '-G Ninja',
+            `-DCMAKE_BUILD_TYPE=${debugBuild ? "Debug" : "Release"}`,
+            `-DCMAKE_TOOLCHAIN_FILE=${VCPKG_CMAKE}`,
+            `-DVCPKG_TARGET_TRIPLET=${VCPKG_TRIPLET}`
+        ];
+        if (launcher) {
+            // Quote so paths with spaces survive the cmd.exe invocation; strip
+            // any stray quotes from the value itself.
+            const quoted = `"${launcher.replace(/"/g, '')}"`;
+            configureArgs.push(`-DCMAKE_C_COMPILER_LAUNCHER=${quoted}`);
+            configureArgs.push(`-DCMAKE_CXX_COMPILER_LAUNCHER=${quoted}`);
+            if (launcher.toLowerCase() === 'sccache') {
+                // Keep MSVC Debug/RelWithDebInfo cacheable (CMake >= 3.25).
+                configureArgs.push('-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded');
+                configureArgs.push('-DCMAKE_POLICY_DEFAULT_CMP0141=NEW');
+            }
+            console.log(`Compiler launcher enabled: ${launcher}`);
+        }
+        configureArgs.push('..');
+        execSync(configureArgs.join(' '), { stdio: 'inherit' });
         console.log('=== Running Ninja in cmake-build-release ===');
         execSync('ninja', { stdio: 'inherit' });
 
