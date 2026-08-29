@@ -181,6 +181,33 @@ void HandleEvent(const std::string &ev, std::vector<std::string> &args)
         // this call is currently just acknowledged/logged rather than mapped to a second
         // mpv property — no additional mpv-side GPU processing knob has been wired up yet.
         std::cout << "[MPV]: gpu-video-processing requested = " << (args.empty() ? "?" : args[0]) << "\n";
+    } else if (ev == "win-set-visibility") {
+        // useShell() sends { fullscreen: boolean } as the sole JSON argument.
+        // It replaces the browser Fullscreen API when running inside WebView2.
+        if (args.empty()) {
+            std::cerr << "win-set-visibility requires a visibility object.\n";
+            return;
+        }
+
+        try {
+            const json visibility = json::parse(args[0]);
+            if (!visibility.contains("fullscreen") || !visibility["fullscreen"].is_boolean()) {
+                std::cerr << "win-set-visibility requires boolean fullscreen.\n";
+                return;
+            }
+
+            ToggleFullScreen(g_hWnd, visibility["fullscreen"].get<bool>());
+
+            // Keep the React FullscreenProvider in sync so its button toggles
+            // correctly after both enter and exit.
+            SendToJS("win-visibility-changed", {
+                {"visible", true},
+                {"visibility", 1},
+                {"isFullscreen", g_isFullscreen},
+            });
+        } catch (const std::exception& e) {
+            std::cerr << "Invalid win-set-visibility payload: " << e.what() << "\n";
+        }
     } else if(ev=="app-ready"){
         g_isAppReady=true;
         HideSplash();

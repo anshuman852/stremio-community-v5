@@ -50,7 +50,7 @@ CRCCheck on
 ;SetCompressor lzma
 ;SetCompressorDictSize 1
 SetCompressor /SOLID lzma
-SetCompressorDictSize 128
+SetCompressorDictSize 64
 
 ;Default installation folder
 InstallDir "$LOCALAPPDATA\Programs\LNV\${APP_NAME}-${VERSION_MAJOR}"

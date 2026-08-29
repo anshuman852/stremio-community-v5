@@ -1,5 +1,12 @@
 @echo off
-call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul
+
+rem --- Select MSVC architecture from arguments (default x64; --x86 case-insensitive) ---
+set "MSVC_ARCH=x64"
+for %%A in (%*) do (
+    if /I "%%~A"=="--x86" set "MSVC_ARCH=x86"
+)
+echo [build_msvc] MSVC architecture: %MSVC_ARCH%
+call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" %MSVC_ARCH% >nul
 set CC=cl
 set CXX=cl
 set "PATH=%PATH:C:\TDM-GCC-64\bin;=%"
