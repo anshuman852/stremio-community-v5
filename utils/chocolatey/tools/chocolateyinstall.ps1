@@ -11,12 +11,12 @@ $packageArgs = @{
 
 
 if ([Environment]::Is64BitOperatingSystem) {
-    $packageArgs['url']          = 'https://github.com/anshuman852/stremio-community-v5/releases/download/5.0.0-beta.26/Stremio.5.0.26-x64.exe'
-    $packageArgs['checksum']     = '780030003f0b9ecf403c5f1b3307d8dc0ceed0c02622d985d3535873e646dbb7'
+    $packageArgs['url']          = 'https://github.com/anshuman852/stremio-community-v5/releases/download/5.0.0-beta.27/Stremio.5.0.27-x64.exe'
+    $packageArgs['checksum']     = '556f4947d1de16a3e9bdceff7c99eb774bf4b67e46b35612168c6fb4702403a5'
     $packageArgs['checksumType'] = 'sha256'
 } else {
-    $packageArgs['url']          = 'https://github.com/anshuman852/stremio-community-v5/releases/download/5.0.0-beta.26/Stremio.5.0.26-x86.exe'
-    $packageArgs['checksum']     = 'c2e15006cfcf0d4da384b9c8ad27c234bebcecaea34501b9016759ea9f5bb960'
+    $packageArgs['url']          = 'https://github.com/anshuman852/stremio-community-v5/releases/download/5.0.0-beta.27/Stremio.5.0.27-x86.exe'
+    $packageArgs['checksum']     = 'b83d48bcc2b321577ed1b4495d9c1abdae815237c11536d241df2a58e509bbea'
     $packageArgs['checksumType'] = 'sha256'
 }
 
