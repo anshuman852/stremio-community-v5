@@ -31,20 +31,26 @@ try {
       });
 
       window.onload = () => {
-        try {
-          initShellComm();
-        } catch (e) {
-            const errorMessage = {
-              type: 6,
-              object: "transport",
-              method: "handleInboundJSON",
-              id: 888,
-              args: [
-                "app-error",
-                [ "shellComm" ]
-              ]
-            };
-          window.chrome.webview.postMessage(JSON.stringify(errorMessage));
+        // initShellComm() was provided by the old ShellTransport.js/WebViewTransport.js
+        // bridge; the current web app's useShell() hook talks to window.chrome.webview
+        // directly and needs no such bootstrap function. Only report app-error if a
+        // page actually defines (and fails) this legacy hook.
+        if (typeof initShellComm === 'function') {
+          try {
+            initShellComm();
+          } catch (e) {
+              const errorMessage = {
+                type: 6,
+                object: "transport",
+                method: "handleInboundJSON",
+                id: 888,
+                args: [
+                  "app-error",
+                  [ "shellComm" ]
+                ]
+              };
+            window.chrome.webview.postMessage(JSON.stringify(errorMessage));
+          }
         }
       };
     }

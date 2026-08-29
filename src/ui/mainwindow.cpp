@@ -174,6 +174,13 @@ void HandleEvent(const std::string &ev, std::vector<std::string> &args)
         HandleMpvSetProp(args);
     } else if(ev=="mpv-observe-prop"){
         HandleMpvObserveProp(args);
+    } else if(ev=="mpv-set-gpu-video-processing"){
+        // Sent by @stremio/stremio-video's ShellVideo engine alongside 'hwdec' when the
+        // user toggles the "GPU Video Processing" player setting. hwdec itself already
+        // picks 'd3d11va' (full GPU pipeline) vs 'auto-copy' based on this same flag, so
+        // this call is currently just acknowledged/logged rather than mapped to a second
+        // mpv property — no additional mpv-side GPU processing knob has been wired up yet.
+        std::cout << "[MPV]: gpu-video-processing requested = " << (args.empty() ? "?" : args[0]) << "\n";
     } else if(ev=="app-ready"){
         g_isAppReady=true;
         HideSplash();
@@ -291,13 +298,9 @@ void HandleInboundJSON(const std::string &msg)
                 1,
                 nlohmann::json::array({0, "shellVersion", 0, APP_VERSION}),
                 nlohmann::json::array({0, "BrowserExtensions", 0, extData}),
+                nlohmann::json::array({0, "gpuVideoProcessing", 0, "true"}),
+                nlohmann::json::array({0, "nativeAssSubtitles", 0, "true"}),
             };
-            transportObj["signals"] = {
-                nlohmann::json::array({0, "handleInboundJSONSignal"}),
-            };
-            nlohmann::json methods = nlohmann::json::array();
-            methods.push_back(nlohmann::json::array({"onEvent", "handleInboundJSON"}));
-            transportObj["methods"] = methods;
             root["data"]["transport"] = transportObj;
 
             std::string payload = root.dump();
@@ -306,46 +309,57 @@ void HandleInboundJSON(const std::string &msg)
             return;
         }
 
-        if (type == 6 && j.contains("method"))
+        if (type == 6)
         {
-            std::string methodName = j["method"].get<std::string>();
-            if (methodName == "handleInboundJSON" || methodName == "onEvent")
+            // Legacy Qt-webChannel-style envelope: { method: "handleInboundJSON"|"onEvent", args: [...] }
+            // New useShell()-style envelope (no "method" field): { args: [...] }
+            if (j.contains("method"))
             {
-                if (j["args"].is_array() && !j["args"].empty())
-                {
-                    std::string ev;
-                    if (j["args"][0].is_string()) {
-                        ev = j["args"][0].get<std::string>();
-                    } else {
-                        ev = "Unknown";
-                    }
-
-                    std::vector<std::string> argVec;
-                    if (j["args"].size() > 1)
-                    {
-                        auto &second = j["args"][1];
-                        if (second.is_array())
-                        {
-                            for (auto &x: second)
-                            {
-                                if (x.is_string()) argVec.push_back(x.get<std::string>());
-                                else argVec.push_back(x.dump());
-                            }
-                        }
-                        else if (second.is_string()) {
-                            argVec.push_back(second.get<std::string>());
-                        }
-                        else {
-                            argVec.push_back(second.dump());
-                        }
-                    }
-
-                    HandleEvent(ev, argVec);
-                }
-                else {
-                    std::cout << "[WARN] invokeMethod=handleInboundJSON => no args array?\n";
+                std::string methodName = j["method"].get<std::string>();
+                if (methodName != "handleInboundJSON" && methodName != "onEvent") {
+                    std::cout<<"Unknown Inbound event="<<msg<<"\n";
+                    return;
                 }
             }
+
+            if (!j.contains("args") || !j["args"].is_array() || j["args"].empty()) {
+                std::cout << "[WARN] invokeMethod => no args array?\n";
+                return;
+            }
+
+            const auto &argsArr = j["args"];
+            std::string ev;
+            if (argsArr[0].is_string()) {
+                ev = argsArr[0].get<std::string>();
+            } else {
+                ev = "Unknown";
+            }
+
+            // Remaining elements become flat positional args. An element that is
+            // itself a JSON array is flattened in place (the old envelope always
+            // wrapped extra args as a single trailing array; the new envelope may
+            // instead pass them as separate flat elements).
+            std::vector<std::string> argVec;
+            for (size_t i = 1; i < argsArr.size(); ++i)
+            {
+                const auto &el = argsArr[i];
+                if (el.is_array())
+                {
+                    for (auto &x: el)
+                    {
+                        if (x.is_string()) argVec.push_back(x.get<std::string>());
+                        else argVec.push_back(x.dump());
+                    }
+                }
+                else if (el.is_string()) {
+                    argVec.push_back(el.get<std::string>());
+                }
+                else {
+                    argVec.push_back(el.dump());
+                }
+            }
+
+            HandleEvent(ev, argVec);
             return;
         }
         std::cout<<"Unknown Inbound event="<<msg<<"\n";

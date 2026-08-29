@@ -144,7 +144,7 @@ void HandleMpvEvents()
             j["type"]="mpv-event-ended";
             switch(ef->reason){
                 case MPV_END_FILE_REASON_EOF:
-                    j["reason"]="quit";
+                    j["reason"]="eof";
                 SendToJS("mpv-event-ended", j);
                 break;
                 case MPV_END_FILE_REASON_ERROR: {

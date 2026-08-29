@@ -94,9 +94,10 @@ void LoadSettings()
     static const wchar_t* kDefCmds =
         L"loadfile,sub-add,keypress,stop,script-message-to,cycle";
     static const wchar_t* kDefProps =
-        L"pause,time-pos,speed,mute,volume,aid,sid,no-sub-ass,vo,osc,"
+        L"pause,time-pos,speed,mute,volume,aid,sid,no-sub-ass,sub-ass-override,vo,osc,"
         L"input-default-bindings,input-vo-keyboard,sub-scale,sub-pos,sub-delay,"
         L"sub-color,sub-back-color,sub-border-color,hwdec,hwdec-codecs,"
+        L"keepaspect,panscan,"
         L"subs-with-matching-audio,subs-match-os-language,subs-fallback,subs-fallback-forced";
 
     LoadMergedAllowlist(iniPath, L"MpvCommandAllowlist", kDefCmds,  g_mpvCommandAllowlist);
