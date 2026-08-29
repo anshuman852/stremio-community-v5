@@ -219,9 +219,10 @@
             * If a WebView-related error appears, install WebView2 or use the portable build.
         * 🌎 **Unreachable Web UI**
           The app loads the UI in the following order:
-            1. [https://stremio.zarg.me/](https://stremio.zarg.me/)
-            2. [https://zaarrg.github.io/stremio-web-shell-fixes/](https://zaarrg.github.io/stremio-web-shell-fixes/)
-            3. [https://web.stremio.com/](https://web.stremio.com/)
+            1. [https://alcdevs.github.io/stremio-web/](https://alcdevs.github.io/stremio-web/)
+            2. [https://stremio.zarg.me/](https://stremio.zarg.me/)
+            3. [https://zaarrg.github.io/stremio-web-shell-fixes/](https://zaarrg.github.io/stremio-web-shell-fixes/)
+            4. [https://web.stremio.com/](https://web.stremio.com/)
             * If the UI appears stuck, press **F5** to reload.
             * If the cached UI is outdated, use **Ctrl+F5** to clear cache and reload.
         * ⚙️ **Invalid MPV configuration**
@@ -320,7 +321,7 @@ Use these extra arguments when launching the application:
 | --autoupdater-force-full    |                                                       | Forces Autoupdate to always do a `full-update` rather than `partial`                                      |
 | --autoupdater-endpoint=     | --autoupdater-endpoint==https://verison.mydomain.com/ | Overrides default checking endpoint for the autoupdater                                                   |
 
-> **⏳ Note:** By default will use as ``webui-url`` the [stremio-web-shell](https://github.com/Zaarrg/stremio-web-shell-fixes) web-ui hosted [here](https://zaarrg.github.io/stremio-web-shell-fixes/#/) which includes fixes to run smoothly as shell with qt6 and WebView2
+> **⏳ Note:** By default will use as ``webui-url`` our own [stremio-web](https://github.com/AlcDevs/stremio-web) build hosted [here](https://alcdevs.github.io/stremio-web/), a fork of upstream Stremio Web kept in sync with it, which includes fixes to run smoothly as shell with qt6 and WebView2
 
 ## 📚 **Guide / Docs**
 If you want to build this app yourself, check the “[docs](https://github.com/Zaarrg/stremio-desktop-v5/tree/master/docs)” folder in this repository for setup instructions and additional information.

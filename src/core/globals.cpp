@@ -11,6 +11,7 @@ HANDLE    g_hMutex  = nullptr;
 HHOOK     g_hMouseHook = nullptr;
 
 std::vector<std::wstring> g_webuiUrls = {
+    L"https://alcdevs.github.io/stremio-web/",
     L"https://stremio.zarg.me/",
     L"https://zaarrg.github.io/stremio-web-shell-fixes/",
     L"https://web.stremio.com/"
