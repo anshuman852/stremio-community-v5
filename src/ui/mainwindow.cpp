@@ -282,9 +282,12 @@ void HandleInboundJSON(const std::string &msg)
         }
 
         if (type == 3) {
-            // 3 = Init event
+            // 3 = Init event. useShell()'s onMessage() only processes a message when
+            // event.type === 3 - the response must echo that back explicitly, it's not
+            // implied by the request/response round-trip.
             nlohmann::json root;
             root["id"] = 0;
+            root["type"] = 3;
             nlohmann::json transportObj;
 
             json extData = {};
