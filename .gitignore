@@ -1,0 +1,30 @@
+# ------------------------------------------------------------------
+# Stremio Community v5 - root gitignore
+# Generated/build artifacts only. Canonical sources stay tracked.
+# ------------------------------------------------------------------
+
+# --- Build outputs ---
+cmake-build-*/
+
+# --- Distribution & generated installers ---
+dist/
+utils/Stremio*.exe
+utils/Stremio*.7z
+
+# --- Downloaded server / WebView2 runtime (see windows.md) ---
+utils/windows/server.js
+utils/windows/WebviewRuntime/
+
+# --- Local dependencies (not part of the repo) ---
+deps/discord-rpc/
+
+# --- Update signing key (never commit) ---
+private_key.pem
+public_key.pem
+
+# --- Editor / OS noise ---
+.vs/
+.idea/
+*.user
+*.log
+Thumbs.db

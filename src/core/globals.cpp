@@ -16,7 +16,7 @@ std::vector<std::wstring> g_webuiUrls = {
     L"https://web.stremio.com/"
 };
 std::vector<std::wstring> g_domainWhitelist;
-std::string  g_updateUrl= "https://raw.githubusercontent.com/Zaarrg/stremio-desktop-v5/refs/heads/webview-windows/version/version.json";
+std::string  g_updateUrl= "https://raw.githubusercontent.com/anshuman852/stremio-community-v5/refs/heads/webview-windows/version/version.json";
 std::wstring  g_extensionsDetailsUrl= L"https://raw.githubusercontent.com/Zaarrg/stremio-desktop-v5/refs/heads/webview-windows/extensions/extensions.json";
 std::wstring  g_webuiUrl;
 
@@ -101,13 +101,13 @@ std::atomic_bool       g_updaterRunning = false;
 std::filesystem::path  g_installerPath;
 std::thread            g_updaterThread;
 const char* public_key_pem = R"(-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoXoJRQ81xOT3Gx6+hsWM
-ZiD4PwtLdxxNhEdL/iK0yp6AdO/L0kcSHk9YCPPx0XPK9sssjSV5vCbNE/2IJxnh
-/mV+3GAMmXgMvTL+DZgrHafnxe1K50M+8Z2z+uM5YC9XDLppgnC6OrUjwRqNHrKI
-T1vcgKf16e/TdKj8xlgadoHBECjv6dr87nbHW115bw8PVn2tSk/zC+QdUud+p6KV
-zA6+FT9ZpHJvdS3R0V0l7snr2cwapXF6J36aLGjJ7UviRFVWEEsQaKtAAtTTBzdD
-4B9FJ2IJb/ifdnVzeuNTDYApCSE1F89XFWN9FoDyw7Jkk+7u4rsKjpcnCDTd9ziG
-kwIDAQAB
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2zOOE5XpcoLRGpSjoYs8
+RiNsiKMbfCu7PclTQd4RuBXsI1ds5L5ovikZsvvuQsVK9hr0hXv4KSTJwdC5RbdJ
+MCxel0t87eK03MFWNl36tkysYhtWwJQHAdkxMgST2NvILG/T8iYinQHF7CqEl/vc
+MMMktVP1RJr3V/hulyZ9hsPZeflEY9PmeLOs1GXEZcFU6vhGRon8eto7yXiStlOU
+f3u6EtFsOPn+5aOXzt5YZKMOZslvVXGWI1R/GVmiEhsqjgSmg1UYz2z2CMs8Xr02
+wxLGDi/Ard0q/ocANq1SK/t0oNWseFdfHVtBZWeQeXwKDCm2VKVnIjxI3gA9JUqi
+6QIDAQAB
 -----END PUBLIC KEY-----)";
 
 // ThumbFast

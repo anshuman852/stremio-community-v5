@@ -109,12 +109,12 @@ const [,, OPENSSL_BIN, GIT_TAG, SHELL_VERSION, SERVER_VERSION] = process.argv;
 
     // windows-x64
     if (!versionDetails.files["windows-x64"]) versionDetails.files["windows-x64"] = {};
-    versionDetails.files["windows-x64"].url = `https://github.com/Zaarrg/stremio-desktop-v5/releases/download/${GIT_TAG}/Stremio.${SHELL_VERSION}-x64.exe`;
+    versionDetails.files["windows-x64"].url = `https://github.com/anshuman852/stremio-community-v5/releases/download/${GIT_TAG}/Stremio.${SHELL_VERSION}-x64.exe`;
     versionDetails.files["windows-x64"].checksum = exeHash_x64;
 
     // windows-x86
     if (!versionDetails.files["windows-x86"]) versionDetails.files["windows-x86"] = {};
-    versionDetails.files["windows-x86"].url = `https://github.com/Zaarrg/stremio-desktop-v5/releases/download/${GIT_TAG}/Stremio.${SHELL_VERSION}-x86.exe`;
+    versionDetails.files["windows-x86"].url = `https://github.com/anshuman852/stremio-community-v5/releases/download/${GIT_TAG}/Stremio.${SHELL_VERSION}-x86.exe`;
     versionDetails.files["windows-x86"].checksum = exeHash_x86;
 
     // server.js
@@ -289,11 +289,11 @@ function updateChocolateyInstall(ps1Path, gitTag, newVersion, hash64, hash86) {
     // We'll build a single block that covers both if/else in one go.
     const newBlock = `
 if ([Environment]::Is64BitOperatingSystem) {
-    $packageArgs['url']          = 'https://github.com/Zaarrg/stremio-desktop-v5/releases/download/${gitTag}/Stremio.${newVersion}-x64.exe'
+    $packageArgs['url']          = 'https://github.com/anshuman852/stremio-community-v5/releases/download/${gitTag}/Stremio.${newVersion}-x64.exe'
     $packageArgs['checksum']     = '${hash64}'
     $packageArgs['checksumType'] = 'sha256'
 } else {
-    $packageArgs['url']          = 'https://github.com/Zaarrg/stremio-desktop-v5/releases/download/${gitTag}/Stremio.${newVersion}-x86.exe'
+    $packageArgs['url']          = 'https://github.com/anshuman852/stremio-community-v5/releases/download/${gitTag}/Stremio.${newVersion}-x86.exe'
     $packageArgs['checksum']     = '${hash86}'
     $packageArgs['checksumType'] = 'sha256'
 }
@@ -333,11 +333,11 @@ function updateScoopManifest(scoopPath, gitTag, newVersion, hash64, hash86) {
     }
 
     // Update 64bit url + hash
-    scoopJson.architecture["64bit"].url = `https://github.com/Zaarrg/stremio-desktop-v5/releases/download/${gitTag}/Stremio.${newVersion}-x64.exe`;
+    scoopJson.architecture["64bit"].url = `https://github.com/anshuman852/stremio-community-v5/releases/download/${gitTag}/Stremio.${newVersion}-x64.exe`;
     scoopJson.architecture["64bit"].hash = hash64;
 
     // Update 32bit url + hash
-    scoopJson.architecture["32bit"].url = `https://github.com/Zaarrg/stremio-desktop-v5/releases/download/${gitTag}/Stremio.${newVersion}-x86.exe`;
+    scoopJson.architecture["32bit"].url = `https://github.com/anshuman852/stremio-community-v5/releases/download/${gitTag}/Stremio.${newVersion}-x86.exe`;
     scoopJson.architecture["32bit"].hash = hash86;
 
     // If you want to rely on .sha256 files for autoupdate, keep the `hash.url` lines in "autoupdate".
