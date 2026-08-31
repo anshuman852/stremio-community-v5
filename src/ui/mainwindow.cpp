@@ -331,6 +331,20 @@ void HandleInboundJSON(const std::string &msg)
                 nlohmann::json::array({0, "gpuVideoProcessing", 0, "true"}),
                 nlohmann::json::array({0, "nativeAssSubtitles", 0, "true"}),
             };
+            // ShellTransport.js (the Qt-webChannel-style client still used by
+            // useServices().shell in stremio-web, e.g. Slider/Settings/Addons)
+            // reads obj.signals.forEach(...) and obj.methods.filter(x => x[0]
+            // === 'onEvent') to derive the wire method name for its onEvent
+            // calls. Without these fields present it throws during init and
+            // shell.active gets stuck false. No real signal registry exists
+            // on this side - SendToJS always emits type:1 regardless - so an
+            // empty signals array is enough; methods just needs one entry
+            // ShellTransport can resolve to the "onEvent" method name that
+            // the type===6 handler below already accepts.
+            transportObj["signals"] = nlohmann::json::array();
+            transportObj["methods"] = nlohmann::json::array({
+                nlohmann::json::array({"onEvent", "onEvent"}),
+            });
             root["data"]["transport"] = transportObj;
 
             std::string payload = root.dump();
