@@ -260,11 +260,12 @@ bool InitMPV(HWND hwnd)
     // demux/caching
     mpv_set_property_string(g_mpv,"demuxer-lavf-probesize",     "524288");
     mpv_set_property_string(g_mpv,"demuxer-lavf-analyzeduration","0.5");
-    mpv_set_property_string(g_mpv,"demuxer-max-bytes","300000000");
-    mpv_set_property_string(g_mpv,"demuxer-max-packets","150000000");
+    mpv_set_property_string(g_mpv,"demuxer-max-bytes","1000000000");
+    mpv_set_property_string(g_mpv,"demuxer-max-packets","300000000");
+    mpv_set_property_string(g_mpv,"demuxer-readahead-secs","60");
     mpv_set_property_string(g_mpv,"cache","yes");
     mpv_set_property_string(g_mpv,"cache-pause","no");
-    mpv_set_property_string(g_mpv,"cache-secs","60");
+    mpv_set_property_string(g_mpv,"cache-secs","300");
     mpv_set_property_string(g_mpv,"vd-lavc-threads","0");
     mpv_set_property_string(g_mpv,"ad-lavc-threads","0");
     mpv_set_property_string(g_mpv,"audio-fallback-to-null","yes");
