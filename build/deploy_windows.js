@@ -53,10 +53,22 @@ const DEFAULT_SETTINGS_FOLDER = path.join(SOURCE_DIR, 'utils', 'stremio');
 const WEBMODS_FOLDER = path.join(SOURCE_DIR, 'utils', 'webmods');
 
 // Default Paths
-const DEFAULT_NSIS = 'C:\\Users\\anshu\\scoop\\shims\\makensis.exe';
-// VCPKG
+// NSIS / vcpkg locations can be overridden via the environment (used by CI);
+// otherwise the script falls back to Program Files, then to the scoop shim.
+const nsisCandidates = [];
+if (process.env.STREMIO_NSIS) nsisCandidates.push(process.env.STREMIO_NSIS);
+if (process.env['ProgramFiles(x86)']) {
+    nsisCandidates.push(path.join(process.env['ProgramFiles(x86)'], 'NSIS', 'makensis.exe'));
+}
+if (process.env.ProgramFiles) {
+    nsisCandidates.push(path.join(process.env.ProgramFiles, 'NSIS', 'makensis.exe'));
+}
+nsisCandidates.push(path.join(process.env.USERPROFILE || '', 'scoop', 'shims', 'makensis.exe'));
+const NSIS_EXE = nsisCandidates.filter(Boolean).find(fs.existsSync);
 const VCPKG_TRIPLET = ARCH === 'x86' ? 'x86-windows-static' : 'x64-windows-static';
-const VCPKG_CMAKE = 'C:\\Users\\anshu\\vcpkg\\scripts\\buildsystems\\vcpkg.cmake';
+const VCPKG_CMAKE = process.env.STREMIO_VCPKG_ROOT
+    ? path.join(process.env.STREMIO_VCPKG_ROOT, 'scripts', 'buildsystems', 'vcpkg.cmake')
+    : 'C:\\Users\\anshu\\vcpkg\\scripts\\buildsystems\\vcpkg.cmake';
 
 // ---------------------------------------------------------------------
 // Per-stage logging (console + build/logs/build-<arch>-<timestamp>.log)
@@ -242,7 +254,7 @@ const SEVENZ_THREADS = parsePositiveIntEnv('STREMIO_7Z_THREADS', null);
             const version = getPackageVersionFromCMake();
             process.env.package_version = version;
             log(`Set package_version to: ${version}`);
-            runStage('NSIS installer', () => buildNsisInstaller());
+            runStage('NSIS installer', () => buildNsisInstaller(buildInstaller));
         }
         if (buildPortable) {
             log('\n--portable detected: building Portable...');
@@ -389,11 +401,14 @@ function getPackageVersionFromCMake() {
     return version;
 }
 
-// Throws on real failures so the surrounding stage log reports them; missing
-// NSIS is a soft skip (warning only), matching the previous behavior.
-function buildNsisInstaller() {
-    if (!fs.existsSync(DEFAULT_NSIS)) {
-        log(`Warning: NSIS not found at default path: ${DEFAULT_NSIS}. Skipping installer.`);
+// Throws on real failures so the surrounding stage log reports them. Since this
+// stage runs only when --installer was requested, a missing NSIS is a hard
+// error (falling back silently would produce a release without installers).
+function buildNsisInstaller(requireNsis) {
+    if (!NSIS_EXE) {
+        const msg = 'makensis.exe not found (set STREMIO_NSIS, or install NSIS).';
+        if (requireNsis) throw new Error(msg);
+        log(`Warning: NSIS not found. Skipping installer.`);
         return;
     }
     const arch = process.argv.includes('--x86') ? 'x86' : 'x64'; // Determine architecture
@@ -407,8 +422,11 @@ function buildNsisInstaller() {
     const nsiScript = path.join(SOURCE_DIR, 'utils', 'windows', 'installer', 'windows-installer.nsi');
     log(`Running makensis.exe with version: ${process.env.package_version} ...`);
     process.env.arch = arch;
-    execSync(`"${DEFAULT_NSIS}" "${nsiScript}"`, { stdio: 'inherit' });
-    log(`\nInstaller created: "Stremio ${process.env.package_version}.exe"`);
+    // Run NSIS from the script's own directory: NSIS resolves relative OutFile
+    // paths against either the CWD or the script directory depending on the
+    // version; with CWD = script dir both resolve to utils/Stremio <ver>-<arch>.exe.
+    execSync(`"${NSIS_EXE}" "${nsiScript}"`, { stdio: 'inherit', cwd: path.dirname(nsiScript) });
+    log(`\nInstaller created: "Stremio ${process.env.package_version}-${arch}.exe"`);
 }
 
 // Throws on real failures so the surrounding stage log reports them.

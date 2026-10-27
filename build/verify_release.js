@@ -65,11 +65,14 @@ function find7z() {
     ].filter(Boolean);
     const found = candidates.find(p => fs.existsSync(p));
     if (found) return found;
-    try {
-        return execFileSync("where", ["7z"], { encoding: "utf8" }).split(/\r?\n/)[0].trim() || null;
-    } catch (e) {
-        return null;
+    // `where` exists on Windows; `which` on POSIX
+    const locators = process.platform === "win32" ? ["where"] : ["which"];
+    for (const loc of locators) {
+        try {
+            return execFileSync(loc, ["7z"], { encoding: "utf8" }).split(/\r?\n/)[0].trim() || null;
+        } catch (e) { /* try the next locator */ }
     }
+    return null;
 }
 
 function sha256File(file) {
