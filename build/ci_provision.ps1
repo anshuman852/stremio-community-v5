@@ -14,9 +14,20 @@ function Write-GhEnv([string]$line) {
     Add-Content -Path $env:GITHUB_ENV -Value $line
 }
 
+# Runs an installer with a hard timeout so a wedged setup can't hang the job.
+function Run-Installer([string]$exe, [string[]]$installerArgs, [int]$timeoutSec = 300) {
+    $p = Start-Process -FilePath $exe -ArgumentList $installerArgs -PassThru -ErrorAction SilentlyContinue
+    if (-not $p) { return }
+    if (-not $p.WaitForExit($timeoutSec * 1000)) {
+        Write-Host "installer still running after ${timeoutSec}s; killing it: $exe"
+        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Try-Download([string]$url, [string]$outFile) {
     try {
-        Invoke-WebRequest -Uri $url -OutFile $outFile -ErrorAction Stop
+        $ProgressPreference = 'SilentlyContinue'  # the progress bar makes big downloads crawl on PS 5.1
+        Invoke-WebRequest -Uri $url -OutFile $outFile -TimeoutSec 600 -ErrorAction Stop
         return $true
     } catch {
         Write-Host "download failed: $url -> $($_.Exception.Message)"
@@ -113,14 +124,14 @@ function Provision-WebView([string]$targetDir, [string]$fwlink, [string]$label, 
     if (-not (Try-Download $fwlink $dl)) { return $false }
     $tmpDir = Join-Path $env:RUNNER_TEMP "webview-$label"
     Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-    Start-Process -FilePath $dl -ArgumentList "/silent","/dir=$tmpDir" -Wait -ErrorAction SilentlyContinue
+    Run-Installer $dl @("/silent","/dir=$tmpDir")
     if (Test-WebViewDir $tmpDir $machine) {
         Copy-Item "$tmpDir\*" -Destination $targetDir -Recurse -Force
         Write-Host "$label provisioned (custom directory install)"
         return $true
     }
     # Fallback: system-wide silent install, then arch-validated harvest
-    Start-Process -FilePath $dl -ArgumentList "/silent" -Wait -ErrorAction SilentlyContinue
+    Run-Installer $dl @("/silent")
     if (Harvest-SystemWebView $targetDir $machine) { return $true }
     return $false
 }
