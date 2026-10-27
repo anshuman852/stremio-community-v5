@@ -1,0 +1,306 @@
+name: Build & Release (Windows)
+
+# End-to-end release pipeline, mirroring docs/RELEASE.md:
+#   checkout -> resolve tag/versions (bump CMakeLists + APP_VERSION)
+#   -> provision external deps -> vcpkg -> build x64 + x86 (MSVC/NSIS/7z)
+#   -> NSIS integrity check -> signed checksums (build_checksums.js)
+#   -> commit metadata -> publish the GitHub release with all assets
+#   -> verify the published release end-to-end (verify_release.js)
+#
+# Requirements:
+#   * Repository secret SIGNING_PRIVATE_KEY - PEM contents of the
+#     auto-updater signing key (never committed to the repo).
+#   * The workflow must run on the RELEASE BRANCH you want the version
+#     metadata committed to (webview-windows for this repo).
+#
+# Re-running for the same tag: delete the previous draft/published release
+# and its tag first, or uncheck "publish_release" to only rebuild artifacts.
+on:
+  workflow_dispatch:
+    inputs:
+      git_tag:
+        description: 'Release Git tag, e.g. 5.0.0-beta.31'
+        required: true
+      shell_version:
+        description: 'Shell version override (empty: derived from tag, e.g. 5.0.31)'
+        required: false
+        default: ''
+      server_version:
+        description: 'server.js version override (empty: keep current from version-details.json)'
+        required: false
+        default: ''
+      build_portable:
+        description: 'Also build the portable .7z archives'
+        type: boolean
+        default: true
+      publish_release:
+        description: 'Publish the GitHub release with all assets and verify it'
+        type: boolean
+        default: true
+
+concurrency:
+  group: release-${{ inputs.git_tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build, sign & release
+    runs-on: windows-latest
+    timeout-minutes: 270
+    env:
+      STREMIO_VCPKG_ROOT: 'C:\vcpkg'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout (with libmpv submodule + full history for release notes)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Resolve tag/versions and bump project version
+        env:
+          INPUT_TAG: ${{ inputs.git_tag }}
+          INPUT_SHELL: ${{ inputs.shell_version }}
+          INPUT_SERVER: ${{ inputs.server_version }}
+        run: |
+          $args = @($env:INPUT_TAG)
+          if ($env:INPUT_SHELL) { $args += @('--shell-version', $env:INPUT_SHELL) }
+          if ($env:INPUT_SERVER) { $args += @('--server-version', $env:INPUT_SERVER) }
+          $out = node build/ci_prepare_release.js @args
+          if ($LASTEXITCODE -ne 0) { throw 'ci_prepare_release.js failed' }
+          $out | Add-Content -Path $env:GITHUB_ENV
+          $out
+
+      - name: Check SIGNING_PRIVATE_KEY secret
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
+        run: |
+          if (-not $env:SIGNING_KEY) {
+            throw "Repository secret SIGNING_PRIVATE_KEY is not set (PEM contents of the auto-updater signing key). Add it under Settings -> Secrets and variables -> Actions."
+          }
+          Write-Host "SIGNING_PRIVATE_KEY present ($($env:SIGNING_KEY.Length) chars)"
+
+      - name: Locate OpenSSL
+        run: |
+          $candidates = @(
+            'C:\Program Files\Git\mingw64\bin',
+            'C:\Program Files\Git\usr\bin',
+            'C:\Program Files\OpenSSL-Win64\bin'
+          )
+          $dir = $candidates | Where-Object { Test-Path (Join-Path $_ 'openssl.exe') } | Select-Object -First 1
+          if (-not $dir) {
+            choco install openssl -y --no-progress
+            $dir = 'C:\Program Files\OpenSSL-Win64\bin'
+          }
+          if (-not (Test-Path (Join-Path $dir 'openssl.exe'))) { throw 'openssl.exe not found' }
+          "OPENSSL_DIR=$dir" | Add-Content -Path $env:GITHUB_ENV
+          Write-Host "Using OpenSSL: $dir"
+
+      - name: Install NSIS and register the nsProcess plugin
+        run: |
+          choco install nsis -y --no-progress
+          $nsis = 'C:\Program Files (x86)\NSIS'
+          if (-not (Test-Path (Join-Path $nsis 'makensis.exe'))) { throw 'NSIS installation failed' }
+          New-Item -ItemType Directory -Force -Path (Join-Path $nsis 'Plugins\x86-unicode') | Out-Null
+          Copy-Item 'utils/windows/NsProcess/Plugin/x86-unicode/nsProcess.dll' (Join-Path $nsis 'Plugins\x86-unicode\nsProcess.dll') -Force
+          Copy-Item 'utils/windows/NsProcess/Include/nsProcess.nsh' (Join-Path $nsis 'Include\nsProcess.nsh') -Force
+          "STREMIO_NSIS=$nsis\makensis.exe" | Add-Content -Path $env:GITHUB_ENV
+          Write-Host "NSIS ready at $nsis"
+
+      - name: Restore provisioned dependencies cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps/discord-rpc
+            utils/windows/server.js
+            utils/windows/WebviewRuntime
+          key: provision-v1-${{ inputs.server_version || 'auto' }}-${{ github.run_id }}
+          restore-keys: |
+            provision-v1-${{ inputs.server_version || 'auto' }}-
+
+      - name: Provision external dependencies
+        run: ./build/ci_provision.ps1
+
+      - name: Restore vcpkg cache (x64)
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\vcpkg\downloads
+            ${{ runner.temp }}\vcpkg-bincache-x64
+          key: vcpkg-x64-${{ github.run_id }}
+          restore-keys: |
+            vcpkg-x64-
+
+      - name: Install vcpkg dependencies (x64)
+        env:
+          VCPKG_DEFAULT_BINARY_CACHE: ${{ runner.temp }}\vcpkg-bincache-x64
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+          & (Join-Path $env:STREMIO_VCPKG_ROOT 'vcpkg.exe') install `
+            openssl:x64-windows-static nlohmann-json:x64-windows-static `
+            webview2:x64-windows-static curl:x64-windows-static
+          if ($LASTEXITCODE -ne 0) { throw 'vcpkg install (x64) failed' }
+
+      - name: Build x64 (MSVC + NSIS installer)
+        env:
+          INPUT_PORTABLE: ${{ inputs.build_portable }}
+        run: |
+          $batArgs = '--installer'
+          if ($env:INPUT_PORTABLE -eq 'true') { $batArgs += ' --portable' }
+          & cmd.exe /c "build_msvc.bat $batArgs"
+          if ($LASTEXITCODE -ne 0) { throw 'x64 build failed' }
+
+      - name: Restore vcpkg cache (x86)
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\vcpkg\downloads
+            ${{ runner.temp }}\vcpkg-bincache-x86
+          key: vcpkg-x86-${{ github.run_id }}
+          restore-keys: |
+            vcpkg-x86-
+
+      - name: Install vcpkg dependencies (x86)
+        env:
+          VCPKG_DEFAULT_BINARY_CACHE: ${{ runner.temp }}\vcpkg-bincache-x86
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+          & (Join-Path $env:STREMIO_VCPKG_ROOT 'vcpkg.exe') install `
+            openssl:x86-windows-static nlohmann-json:x86-windows-static `
+            webview2:x86-windows-static curl:x86-windows-static
+          if ($LASTEXITCODE -ne 0) { throw 'vcpkg install (x86) failed' }
+
+      - name: Build x86 (MSVC + NSIS installer)
+        env:
+          INPUT_PORTABLE: ${{ inputs.build_portable }}
+        run: |
+          $batArgs = '--x86 --installer'
+          if ($env:INPUT_PORTABLE -eq 'true') { $batArgs += ' --portable' }
+          & cmd.exe /c "build_msvc.bat $batArgs"
+          if ($LASTEXITCODE -ne 0) { throw 'x86 build failed' }
+
+      - name: Locate produced artifacts
+        env:
+          INPUT_PORTABLE: ${{ inputs.build_portable }}
+        run: |
+          $ver = $env:SHELL_VERSION
+          foreach ($arch in @('x64', 'x86')) {
+            if (Test-Path "utils/Stremio $ver-$arch.exe") { continue }
+            Write-Host "Looking for $arch installer outside utils/ (NSIS output location)..."
+            $searchRoots = @('.', 'build', "cmake-build-release-$arch", 'dist')
+            $hit = $searchRoots |
+                   ForEach-Object { Get-ChildItem -Path $_ -Recurse -Depth 2 -Filter "Stremio $ver-$arch.exe" -ErrorAction SilentlyContinue } |
+                   Select-Object -First 1
+            if (-not $hit) { throw "$arch installer not found after build (names searched: repo root/build/cmake/dist)" }
+            Move-Item $hit.FullName "utils/Stremio $ver-$arch.exe"
+            Write-Host "Moved $($hit.FullName) -> utils/Stremio $ver-$arch.exe"
+          }
+          Get-ChildItem 'utils/Stremio *' -ErrorAction SilentlyContinue | Select-Object Name, Length
+
+      - name: Verify NSIS integrity of both installers
+        run: node build/verify_nsis_crc.js "utils/Stremio $env:SHELL_VERSION-x64.exe" "utils/Stremio $env:SHELL_VERSION-x86.exe"
+
+      - name: Write signing key
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
+        run: |
+          $key = $env:SIGNING_KEY -replace "`r`n", "`n"
+          if ($key -notmatch "`n$") { $key += "`n" }
+          [IO.File]::WriteAllText((Join-Path (Get-Location) 'private_key.pem'), $key)
+
+      - name: Checksums, signed manifests, scoop/choco updates
+        run: node build/build_checksums.js "$env:OPENSSL_DIR" "$env:GIT_TAG" "$env:SHELL_VERSION" "$env:SERVER_VERSION"
+
+      - name: Remove ephemeral signing key
+        if: always()
+        run: Remove-Item private_key.pem -Force -ErrorAction SilentlyContinue
+
+      - name: Commit release metadata
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add CMakeLists.txt src/core/globals.h version/version.json version/version-details.json utils/scoop/stremio-desktop-v5.json utils/chocolatey/stremio.nuspec utils/chocolatey/tools/chocolateyinstall.ps1
+          Get-ChildItem utils -Filter '*.sha256' | ForEach-Object { git add $_.FullName }
+          if (git diff --cached --quiet) {
+            Write-Host 'No metadata changes to commit.'
+          } else {
+            git commit -m "Release $env:GIT_TAG"
+            git push origin "HEAD:refs/heads/$($env:GITHUB_REF_NAME)"
+          }
+
+      - name: Create GitHub release and upload assets
+        if: ${{ inputs.publish_release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_PORTABLE: ${{ inputs.build_portable }}
+        run: |
+          $sv = $env:SHELL_VERSION
+          $files = @(
+            "utils/Stremio $sv-x64.exe#Stremio.$sv-x64.exe",
+            "utils/Stremio.$sv-x64.exe.sha256"
+          )
+          $files += "utils/Stremio $sv-x86.exe#Stremio.$sv-x86.exe"
+          $files += "utils/Stremio.$sv-x86.exe.sha256"
+          if ($env:INPUT_PORTABLE -eq 'true') {
+            $files += "utils/Stremio $sv-x64.7z#Stremio.$sv-x64.7z"
+            if ($env:WEBVIEW_X86_OK -ne '0' -and (Test-Path "utils/Stremio $sv-x86.7z")) {
+              $files += "utils/Stremio $sv-x86.7z#Stremio.$sv-x86.7z"
+            } elseif ($env:WEBVIEW_X86_OK -eq '0') {
+              Write-Warning 'Skipping x86 portable archive (WebView runtime unavailable on runner).'
+            }
+          }
+          $files | ForEach-Object { Write-Host "asset: $_" }
+          & gh release create $env:GIT_TAG @files --title "Stremio Community v$sv" --generate-notes --latest
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning 'gh release create failed (tag/release may already exist); retrying as upload.'
+            & gh release upload $env:GIT_TAG @files --clobber
+            & gh release edit $env:GIT_TAG --title "Stremio Community v$sv" --latest
+            if ($LASTEXITCODE -ne 0) { throw 'gh release upload/edit failed' }
+          }
+
+      - name: Upload artifacts (build-only run)
+        if: ${{ !inputs.publish_release }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stremio-${{ inputs.git_tag }}-built
+          path: |
+            utils/Stremio*
+            version/version.json
+            version/version-details.json
+          if-no-files-found: error
+
+      - name: Upload build logs (failure diagnostics)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ inputs.git_tag }}
+          path: build/logs
+          retention-days: 7
+
+  verify-release:
+    name: Verify published release
+    needs: build-release
+    if: ${{ inputs.publish_release }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure 7-Zip is available
+        run: |
+          if ! command -v 7z >/dev/null 2>&1; then
+            sudo apt-get update -q
+            sudo apt-get install -y -q p7zip-full
+          fi
+          7z i > /dev/null && echo "7z ok"
+
+      - name: Verify release end-to-end
+        run: node build/verify_release.js ${{ inputs.git_tag }} --repo ${{ github.repository }}
