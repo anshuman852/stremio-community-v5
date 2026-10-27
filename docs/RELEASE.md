@@ -19,6 +19,16 @@ node build_checksums.js "C:\Program Files\OpenSSL-Win64\bin" "5.0.0-beta.8" "5.0
 
 5. Commit Changes
 6. Make new release with the Git tag used when running ``build_checksums.js``
+7. Verify the published release assets before announcing it (catches corrupted
+   uploads/downloads early, i.e. the "NSIS Error: Installer integrity check has
+   failed" class of problem):
+   ```
+   node build/verify_release.js <Git_Tag>
+   ```
+   The script downloads every asset of the release, compares digests against the
+   published `.sha256` files, runs a full CRC integrity test via 7-Zip, and
+   checks `version/version-details.json` points at this tag with matching
+   checksums (what the auto-updater will consume). Exit code 1 on any failure.
 
 > **⏳Note:** Alternatively u can separate the version bump commit. Instead:
 > Commit - Release - Build Checksums - Commit Built Checksums

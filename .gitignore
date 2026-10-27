@@ -10,6 +10,7 @@ cmake-build-*/
 dist/
 utils/Stremio*.exe
 utils/Stremio*.7z
+build/release-check/
 
 # --- Downloaded server / WebView2 runtime (see windows.md) ---
 utils/windows/server.js
