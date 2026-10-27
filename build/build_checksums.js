@@ -25,6 +25,7 @@
 const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
+const { verifyNsisFile } = require("./nsis_checker");
 
 // Parse CLI arguments
 const [,, OPENSSL_BIN, GIT_TAG, SHELL_VERSION, SERVER_VERSION] = process.argv;
@@ -77,6 +78,19 @@ const [,, OPENSSL_BIN, GIT_TAG, SHELL_VERSION, SERVER_VERSION] = process.argv;
     // 4) Generate SHA-256 for the .exe and server.js
     checkFileExists(EXE_PATH_x64, "Stremio x64 .exe");
     checkFileExists(EXE_PATH_x86, "Stremio x86 .exe");
+
+    // 4a) NSIS integrity pre-check: refuse to sign/checksum installers whose
+    //     embedded NSIS CRC is stale relative to their bytes (such installers
+    //     abort on every machine with "Installer integrity check has failed").
+    for (const [label, exe] of [["x64", EXE_PATH_x64], ["x86", EXE_PATH_x86]]) {
+        const nsisOk = verifyNsisFile(exe);
+        if (!nsisOk) {
+            console.error(`ERROR: ${label} installer failed the NSIS integrity pre-check: ${exe}`);
+            console.error("       Do NOT publish it. Repair with `node build/fix_nsis_crc.js` or rebuild, then re-run this script.");
+            process.exit(1);
+        }
+    }
+
     const exeHash_x64 = computeSha256(opensslExe, EXE_PATH_x64);
     const exeHash_x86 = computeSha256(opensslExe, EXE_PATH_x86);
 
