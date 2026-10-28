@@ -134,15 +134,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "vcpkg install ($env:TRIPLET) failed" }
 
       # When the x86 WebView2 runtime could not be provisioned, the x86 portable
-      # leg skips its build/upload steps (WEBVIEW_X86_OK=0) instead of failing
+      # leg skips its build/upload steps (WEBVIEW_X86_SKIP=1) instead of failing
       # the release; the release job already tolerates a missing .7z.
       - name: Warn about skipped portable archive
-        if: ${{ env.WEBVIEW_X86_OK == '0' }}
+        if: ${{ env.WEBVIEW_X86_SKIP == '1' }}
         run: |
           Write-Warning "Skipping the ${{ matrix.arch }} portable archive (WebView2 runtime unavailable)."
 
       - name: Build (MSVC + ${{ matrix.package }})
-        if: ${{ env.WEBVIEW_X86_OK != '0' }}
+        if: ${{ env.WEBVIEW_X86_SKIP != '1' }}
         env:
           ARCH: ${{ matrix.arch }}
           PACKAGE: ${{ matrix.package }}
@@ -153,7 +153,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "$env:ARCH $env:PACKAGE build failed" }
 
       - name: Locate produced artifacts
-        if: ${{ env.WEBVIEW_X86_OK != '0' && matrix.package == 'installer' }}
+        if: ${{ env.WEBVIEW_X86_SKIP != '1' && matrix.package == 'installer' }}
         env:
           ARCH: ${{ matrix.arch }}
         run: |
@@ -172,7 +172,7 @@ jobs:
           Get-ChildItem "utils/Stremio *-$arch.*" | Select-Object Name, Length
 
       - name: Upload build output
-        if: ${{ env.WEBVIEW_X86_OK != '0' }}
+        if: ${{ env.WEBVIEW_X86_SKIP != '1' }}
         uses: actions/upload-artifact@v6
         with:
           name: build-${{ matrix.arch }}-${{ matrix.package }}

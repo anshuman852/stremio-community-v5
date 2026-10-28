@@ -8,7 +8,7 @@
 # -Arch limits provisioning to one architecture (the CI build matrix runs one
 # leg per arch); 'none' provisions only server.js (the release job, which
 # needs its checksum but builds nothing). When the x86 WebView runtime cannot
-# be provisioned, WEBVIEW_X86_OK=0 is written so later steps skip the x86
+# be provisioned, WEBVIEW_X86_SKIP=1 is written so later steps skip the x86
 # portable archive instead of failing.
 param(
     [ValidateSet('x64', 'x86', 'all', 'none')]
@@ -238,7 +238,7 @@ if ($wantX86 -and -not $SkipWebView) {
         Write-Host "WebView2 portable runtime (x86) ready"
     } else {
         Write-Warning "X86 WebView2 runtime could not be provisioned; the x86 portable archive will be skipped."
-        Write-GhEnv "WEBVIEW_X86_OK=0"
+        Write-GhEnv "WEBVIEW_X86_SKIP=1"
     }
 }
 
