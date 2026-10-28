@@ -47,13 +47,14 @@ permissions:
 
 jobs:
   build:
-    name: Build ${{ matrix.arch }}
+    name: Build ${{ matrix.arch }} ${{ matrix.package }}
     runs-on: windows-latest
     timeout-minutes: 175
     strategy:
       fail-fast: false
-      matrix:
-        arch: [x64, x86]
+      # One leg per arch and package kind, so the slow portable 7-Zip step runs
+      # in parallel with the NSIS installer instead of after it.
+      matrix: ${{ fromJSON(inputs.build_portable && '{"include":[{"arch":"x64","package":"installer"},{"arch":"x64","package":"portable"},{"arch":"x86","package":"installer"},{"arch":"x86","package":"portable"}]}' || '{"include":[{"arch":"x64","package":"installer"},{"arch":"x86","package":"installer"}]}') }}
     env:
       STREMIO_VCPKG_ROOT: 'C:\vcpkg'
     defaults:
@@ -80,6 +81,7 @@ jobs:
           $out
 
       - name: Install NSIS and register the nsProcess plugin
+        if: ${{ matrix.package == 'installer' }}
         run: |
           choco install nsis -y --no-progress
           $nsis = 'C:\Program Files (x86)\NSIS'
@@ -97,12 +99,18 @@ jobs:
             deps/discord-rpc
             utils/windows/server.js
             utils/windows/WebviewRuntime
-          key: provision-v2-${{ matrix.arch }}-${{ inputs.server_version || 'auto' }}-${{ github.run_id }}
+          key: provision-v3-${{ matrix.arch }}-${{ matrix.package }}-${{ inputs.server_version || 'auto' }}-${{ github.run_id }}
           restore-keys: |
-            provision-v2-${{ matrix.arch }}-${{ inputs.server_version || 'auto' }}-
+            provision-v3-${{ matrix.arch }}-${{ matrix.package }}-${{ inputs.server_version || 'auto' }}-
 
       - name: Provision external dependencies
-        run: ./build/ci_provision.ps1 -Arch ${{ matrix.arch }}
+        env:
+          ARCH: ${{ matrix.arch }}
+          PACKAGE: ${{ matrix.package }}
+        run: |
+          # Only the portable archive bundles a WebView2 runtime.
+          if ($env:PACKAGE -eq 'portable') { ./build/ci_provision.ps1 -Arch $env:ARCH }
+          else { ./build/ci_provision.ps1 -Arch $env:ARCH -SkipWebView }
 
       - name: Restore vcpkg cache
         uses: actions/cache@v4
@@ -110,7 +118,7 @@ jobs:
           path: |
             C:\vcpkg\downloads
             ${{ runner.temp }}\vcpkg-bincache-${{ matrix.arch }}
-          key: vcpkg-${{ matrix.arch }}-${{ github.run_id }}
+          key: vcpkg-${{ matrix.arch }}-${{ matrix.package }}-${{ github.run_id }}
           restore-keys: |
             vcpkg-${{ matrix.arch }}-
 
@@ -125,18 +133,27 @@ jobs:
             "webview2:$env:TRIPLET" "curl:$env:TRIPLET"
           if ($LASTEXITCODE -ne 0) { throw "vcpkg install ($env:TRIPLET) failed" }
 
-      - name: Build (MSVC + NSIS installer)
-        env:
-          INPUT_PORTABLE: ${{ inputs.build_portable }}
-          ARCH: ${{ matrix.arch }}
+      # When the x86 WebView2 runtime could not be provisioned, the x86 portable
+      # leg skips its build/upload steps (WEBVIEW_X86_OK=0) instead of failing
+      # the release; the release job already tolerates a missing .7z.
+      - name: Warn about skipped portable archive
+        if: ${{ env.WEBVIEW_X86_OK == '0' }}
         run: |
-          $batArgs = if ($env:ARCH -eq 'x86') { '--x86 --installer' } else { '--installer' }
-          # Skip the portable archive when its WebView2 runtime could not be provisioned.
-          if ($env:INPUT_PORTABLE -eq 'true' -and $env:WEBVIEW_X86_OK -ne '0') { $batArgs += ' --portable' }
+          Write-Warning "Skipping the ${{ matrix.arch }} portable archive (WebView2 runtime unavailable)."
+
+      - name: Build (MSVC + ${{ matrix.package }})
+        if: ${{ env.WEBVIEW_X86_OK != '0' }}
+        env:
+          ARCH: ${{ matrix.arch }}
+          PACKAGE: ${{ matrix.package }}
+        run: |
+          $batArgs = if ($env:ARCH -eq 'x86') { '--x86' } else { '' }
+          $batArgs += " --$env:PACKAGE"
           & cmd.exe /c "build_msvc.bat $batArgs"
-          if ($LASTEXITCODE -ne 0) { throw "$env:ARCH build failed" }
+          if ($LASTEXITCODE -ne 0) { throw "$env:ARCH $env:PACKAGE build failed" }
 
       - name: Locate produced artifacts
+        if: ${{ env.WEBVIEW_X86_OK != '0' && matrix.package == 'installer' }}
         env:
           ARCH: ${{ matrix.arch }}
         run: |
@@ -155,10 +172,11 @@ jobs:
           Get-ChildItem "utils/Stremio *-$arch.*" | Select-Object Name, Length
 
       - name: Upload build output
+        if: ${{ env.WEBVIEW_X86_OK != '0' }}
         uses: actions/upload-artifact@v4
         with:
-          name: build-${{ matrix.arch }}
-          path: utils/Stremio *-${{ matrix.arch }}.*
+          name: build-${{ matrix.arch }}-${{ matrix.package }}
+          path: utils/Stremio *-${{ matrix.arch }}.${{ matrix.package == 'portable' && '7z' || 'exe' }}
           if-no-files-found: error
 
       - name: Upload build logs (failure diagnostics)

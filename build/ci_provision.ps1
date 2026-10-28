@@ -12,7 +12,9 @@
 # portable archive instead of failing.
 param(
     [ValidateSet('x64', 'x86', 'all', 'none')]
-    [string]$Arch = 'all'
+    [string]$Arch = 'all',
+    # Installer-only legs don't need the portable WebView2 runtimes.
+    [switch]$SkipWebView
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -152,67 +154,74 @@ function Provision-WebView([string]$targetDir, [string]$fwlink, [string]$label, 
     return $false
 }
 
-# Fetches the x86 runtime without executing any installer: query the Edge
-# Update API for the latest Evergreen release, download the .cab, expand it
-# and (when it wraps an MSI) extract the payload as an administrative image.
+# Fetches the x86 runtime without executing any installer. The Edge content
+# delivery API (the same one the updater uses) hands out the offline
+# MicrosoftEdge_X86_<ver>.exe package, which is a 7z holding MSEDGE.7z, which in
+# turn holds Chrome-bin\<ver>\msedgewebview2.exe and the rest of the runtime.
+# (The old api.edge.microsoft.com endpoint does not exist - it never resolved.)
 function Provision-WebViewX86FromApi([string]$targetDir) {
     try {
-        $endpoints = @(
-            'https://api.edge.microsoft.com/webview2runtime/rest/evergreen-releases/latest?os=win64&arch=x86'
-            'https://api.edge.microsoft.com/webview2runtime/rest/evergreen-releases/latest'
-        )
-        $cabUrl = $null
-        foreach ($ep in $endpoints) {
+        $sevenZip = 'C:\Program Files\7-Zip\7z.exe'
+        if (-not (Test-Path $sevenZip)) { Write-Warning '7-Zip not found; cannot unpack the x86 runtime'; return $false }
+        $name = 'msedgewebview-stable-win-x86'
+        $api  = 'https://msedge.api.cdp.microsoft.com/api'
+        $body = '{"targetingAttributes":{"Channel":"stable","AppAp":""}}'
+        $ProgressPreference = 'SilentlyContinue'
+
+        # Transient network failures happen on runners; retry the metadata calls.
+        $info = $null
+        foreach ($attempt in 1..3) {
             try {
-                Write-Host "Querying $ep"
-                $json = (Invoke-WebRequest -Uri $ep -TimeoutSec 120 -ErrorAction Stop).Content
-                $links = [regex]::Matches([string]$json, 'https://[^\s"\\<>]+?\.cab') |
-                         ForEach-Object { $_.Value } | Select-Object -Unique
-                if ($links) {
-                    # The x86 package name carries the arch tag; prefer it.
-                    $cabUrl = ($links | Where-Object { $_ -match '(?i)x86' } | Select-Object -First 1)
-                    if (-not $cabUrl) { $cabUrl = $links | Select-Object -First 1 }
-                }
+                $ver = (Invoke-RestMethod -Method Post -Uri "$api/v2/contents/Browser/namespaces/Default/names/$name/versions/latest?action=select" `
+                        -ContentType 'application/json' -Body $body -TimeoutSec 120).ContentId.Version
+                Write-Host "Latest x86 WebView2 runtime: $ver"
+                $files = Invoke-RestMethod -Method Post -Uri "$api/v1.1/contents/Browser/namespaces/Default/names/$name/versions/$ver/files?action=GenerateDownloadInfo" `
+                         -ContentType 'application/json' -Body $body -TimeoutSec 120
+                $info = @($files) | Where-Object { $_.FileId -match '\.exe$' } | Select-Object -First 1
+                if ($info) { break }
             } catch {
-                Write-Host "metadata query failed: $($_.Exception.Message)"
+                Write-Host "metadata query attempt $attempt failed: $($_.Exception.Message)"
+                Start-Sleep -Seconds (5 * $attempt)
             }
-            if ($cabUrl) { break }
         }
-        if (-not $cabUrl) { Write-Warning 'no .cab runtime link found in the Edge Update API metadata'; return $false }
-        Write-Host "Downloading x86 runtime cabinet: $cabUrl"
-        $cab = Join-Path $env:RUNNER_TEMP 'webview-x86.cab'
-        if (-not (Try-Download $cabUrl $cab)) { return $false }
-        $cabDir = Join-Path $env:RUNNER_TEMP 'webview-x86-cab'
-        Remove-Item $cabDir -Recurse -Force -ErrorAction SilentlyContinue
-        New-Item -ItemType Directory -Force -Path $cabDir | Out-Null
-        & expand.exe -F:* $cab $cabDir | Out-Null
-        if ($LASTEXITCODE -ne 0) { Write-Warning 'expand.exe could not extract the runtime cabinet'; return $false }
-        $exe = Get-ChildItem $cabDir -Recurse -Filter 'msedgewebview2.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $exe) {
-            $msi = Get-ChildItem $cabDir -Recurse -Filter '*.msi' -ErrorAction SilentlyContinue | Select-Object -First 1
-            if (-not $msi) { Write-Warning 'runtime cabinet contained neither loose files nor an MSI'; return $false }
-            Write-Host "Extracting $($msi.Name) as an administrative image..."
-            $imgDir = Join-Path $env:RUNNER_TEMP 'webview-x86-image'
-            Remove-Item $imgDir -Recurse -Force -ErrorAction SilentlyContinue
-            New-Item -ItemType Directory -Force -Path $imgDir | Out-Null
-            $p = Start-Process msiexec.exe -ArgumentList "/a", "`"$($msi.FullName)`"", "/qn", "TARGETDIR=$imgDir" -Wait -PassThru
-            if ($p.ExitCode -notin @(0, 3010)) { Write-Warning "msiexec /a extraction failed (exit $($p.ExitCode))"; return $false }
-            $exe = Get-ChildItem $imgDir -Recurse -Filter 'msedgewebview2.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-            if (-not $exe) { Write-Warning 'administrative image did not contain msedgewebview2.exe'; return $false }
+        if (-not $info) { Write-Warning 'could not resolve an x86 WebView2 runtime package from the Edge content API'; return $false }
+
+        $pkg = Join-Path $env:RUNNER_TEMP 'webview-x86-pkg.exe'
+        Write-Host "Downloading $($info.FileId) ($([math]::Round($info.SizeInBytes / 1MB)) MB)..."
+        if (-not (Try-Download $info.Url $pkg)) { return $false }
+        if ($info.Hashes.Sha256) {
+            $expected = [BitConverter]::ToString([Convert]::FromBase64String($info.Hashes.Sha256)).Replace('-', '')
+            $actual = (Get-FileHash $pkg -Algorithm SHA256).Hash
+            if ($actual -ne $expected) { Write-Warning "x86 runtime package SHA256 mismatch ($actual != $expected)"; return $false }
         }
+
+        $stage1 = Join-Path $env:RUNNER_TEMP 'webview-x86-stage1'
+        $stage2 = Join-Path $env:RUNNER_TEMP 'webview-x86-stage2'
+        Remove-Item $stage1, $stage2 -Recurse -Force -ErrorAction SilentlyContinue
+        & $sevenZip x $pkg "-o$stage1" -y | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Warning '7z could not unpack the x86 runtime package'; return $false }
+        $inner = Get-ChildItem $stage1 -Recurse -Filter '*.7z' | Select-Object -First 1
+        if (-not $inner) { Write-Warning 'x86 runtime package did not contain an inner .7z'; return $false }
+        & $sevenZip x $inner.FullName "-o$stage2" -y | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Warning '7z could not unpack the inner x86 runtime archive'; return $false }
+
+        $exe = Get-ChildItem $stage2 -Recurse -Filter 'msedgewebview2.exe' | Select-Object -First 1
+        if (-not $exe) { Write-Warning 'unpacked x86 runtime does not contain msedgewebview2.exe'; return $false }
         if ((Get-PeMachine $exe.FullName) -ne $script:X86_MACHINE) {
-            Write-Warning ("extracted runtime has the wrong architecture (PE machine=0x{0:X})" -f (Get-PeMachine $exe.FullName))
+            Write-Warning ("unpacked runtime has the wrong architecture (PE machine=0x{0:X})" -f (Get-PeMachine $exe.FullName))
             return $false
         }
+        New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
         Copy-Item "$((Split-Path -Parent $exe.FullName))\*" -Destination $targetDir -Recurse -Force
+        Remove-Item $pkg, $stage1, $stage2 -Recurse -Force -ErrorAction SilentlyContinue
         return (Test-WebViewDir $targetDir $script:X86_MACHINE)
     } catch {
-        Write-Warning "x86 runtime provisioning via the Edge Update API failed: $($_.Exception.Message)"
+        Write-Warning "x86 runtime provisioning via the Edge content API failed: $($_.Exception.Message)"
         return $false
     }
 }
 
-if ($wantX64) {
+if ($wantX64 -and -not $SkipWebView) {
     $x64Webview = Join-Path $root 'utils/windows/WebviewRuntime/x64/EdgeWebView'
     if (Provision-WebView $x64Webview 'https://go.microsoft.com/fwlink/?linkid=2124701' 'x64' $script:X64_MACHINE) {
         Write-Host "WebView2 portable runtime (x64) ready"
@@ -221,7 +230,7 @@ if ($wantX64) {
     }
 }
 
-if ($wantX86) {
+if ($wantX86 -and -not $SkipWebView) {
     $x86Webview = Join-Path $root 'utils/windows/WebviewRuntime/x86/EdgeWebView'
     if ((Test-WebViewDir $x86Webview $script:X86_MACHINE) -or (Harvest-SystemWebView $x86Webview $script:X86_MACHINE)) {
         Write-Host "WebView2 portable runtime (x86) ready"
