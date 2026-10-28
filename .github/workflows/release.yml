@@ -61,10 +61,13 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - name: Checkout (with libmpv submodule)
+      - name: Checkout
         uses: actions/checkout@v5
-        with:
-          submodules: recursive
+
+      # The libmpv submodule carries many commits of binary archives; a shallow
+      # fetch of just the pinned commit is much faster than a full clone.
+      - name: Fetch libmpv submodule (shallow)
+        run: git submodule update --init --depth 1 --recursive
 
       - name: Resolve tag/versions and bump project version
         env:
@@ -115,9 +118,7 @@ jobs:
       - name: Restore vcpkg cache
         uses: actions/cache@v5
         with:
-          path: |
-            C:\vcpkg\downloads
-            ${{ runner.temp }}\vcpkg-bincache-${{ matrix.arch }}
+          path: ${{ runner.temp }}\vcpkg-bincache-${{ matrix.arch }}
           key: vcpkg-${{ matrix.arch }}-${{ matrix.package }}-${{ github.run_id }}
           restore-keys: |
             vcpkg-${{ matrix.arch }}-
@@ -196,10 +197,10 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - name: Checkout (full history for release notes)
+      # Release notes come from GitHub's --generate-notes API, so the job only
+      # needs the current commit, not the full history.
+      - name: Checkout
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
       - name: Resolve tag/versions and bump project version
         env:
