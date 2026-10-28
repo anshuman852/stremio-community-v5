@@ -115,6 +115,13 @@ if (-not (Test-Path (Join-Path $root 'deps/libmpv/i686/libmpv-2.dll'))) {
 Write-Host "libmpv dlls ready"
 
 # ---------------- 3) WebView2 runtime (portable archives) ----------------
+# The Evergreen standalone installers cannot be automated headlessly on this
+# image (with /silent they still pop dialogs and wedge until killed), so:
+#   x64: harvest the runtime already present on the runner, fall back to the
+#        fwlink standalone installer as the last resort.
+#   x86: harvest the runner, then pull the runtime package straight from the
+#        Edge Update API and extract it via a `msiexec /a` administrative
+#        image - no installer is ever executed, so nothing can hang.
 function Provision-WebView([string]$targetDir, [string]$fwlink, [string]$label, [int]$machine) {
     if (Test-WebViewDir $targetDir $machine) { Write-Host "$label already provisioned"; return $true }
     if (Harvest-SystemWebView $targetDir $machine) { return $true }
@@ -136,6 +143,66 @@ function Provision-WebView([string]$targetDir, [string]$fwlink, [string]$label, 
     return $false
 }
 
+# Fetches the x86 runtime without executing any installer: query the Edge
+# Update API for the latest Evergreen release, download the .cab, expand it
+# and (when it wraps an MSI) extract the payload as an administrative image.
+function Provision-WebViewX86FromApi([string]$targetDir) {
+    try {
+        $endpoints = @(
+            'https://api.edge.microsoft.com/webview2runtime/rest/evergreen-releases/latest?os=win64&arch=x86'
+            'https://api.edge.microsoft.com/webview2runtime/rest/evergreen-releases/latest'
+        )
+        $cabUrl = $null
+        foreach ($ep in $endpoints) {
+            try {
+                Write-Host "Querying $ep"
+                $json = (Invoke-WebRequest -Uri $ep -TimeoutSec 120 -ErrorAction Stop).Content
+                $links = [regex]::Matches([string]$json, 'https://[^\s"\\<>]+?\.cab') |
+                         ForEach-Object { $_.Value } | Select-Object -Unique
+                if ($links) {
+                    # The x86 package name carries the arch tag; prefer it.
+                    $cabUrl = ($links | Where-Object { $_ -match '(?i)x86' } | Select-Object -First 1)
+                    if (-not $cabUrl) { $cabUrl = $links | Select-Object -First 1 }
+                }
+            } catch {
+                Write-Host "metadata query failed: $($_.Exception.Message)"
+            }
+            if ($cabUrl) { break }
+        }
+        if (-not $cabUrl) { Write-Warning 'no .cab runtime link found in the Edge Update API metadata'; return $false }
+        Write-Host "Downloading x86 runtime cabinet: $cabUrl"
+        $cab = Join-Path $env:RUNNER_TEMP 'webview-x86.cab'
+        if (-not (Try-Download $cabUrl $cab)) { return $false }
+        $cabDir = Join-Path $env:RUNNER_TEMP 'webview-x86-cab'
+        Remove-Item $cabDir -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Force -Path $cabDir | Out-Null
+        & expand.exe -F:* $cab $cabDir | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Warning 'expand.exe could not extract the runtime cabinet'; return $false }
+        $exe = Get-ChildItem $cabDir -Recurse -Filter 'msedgewebview2.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $exe) {
+            $msi = Get-ChildItem $cabDir -Recurse -Filter '*.msi' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $msi) { Write-Warning 'runtime cabinet contained neither loose files nor an MSI'; return $false }
+            Write-Host "Extracting $($msi.Name) as an administrative image..."
+            $imgDir = Join-Path $env:RUNNER_TEMP 'webview-x86-image'
+            Remove-Item $imgDir -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Force -Path $imgDir | Out-Null
+            $p = Start-Process msiexec.exe -ArgumentList "/a", "`"$($msi.FullName)`"", "/qn", "TARGETDIR=$imgDir" -Wait -PassThru
+            if ($p.ExitCode -notin @(0, 3010)) { Write-Warning "msiexec /a extraction failed (exit $($p.ExitCode))"; return $false }
+            $exe = Get-ChildItem $imgDir -Recurse -Filter 'msedgewebview2.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $exe) { Write-Warning 'administrative image did not contain msedgewebview2.exe'; return $false }
+        }
+        if ((Get-PeMachine $exe.FullName) -ne $script:X86_MACHINE) {
+            Write-Warning ("extracted runtime has the wrong architecture (PE machine=0x{0:X})" -f (Get-PeMachine $exe.FullName))
+            return $false
+        }
+        Copy-Item "$((Split-Path -Parent $exe.FullName))\*" -Destination $targetDir -Recurse -Force
+        return (Test-WebViewDir $targetDir $script:X86_MACHINE)
+    } catch {
+        Write-Warning "x86 runtime provisioning via the Edge Update API failed: $($_.Exception.Message)"
+        return $false
+    }
+}
+
 $x64Webview = Join-Path $root 'utils/windows/WebviewRuntime/x64/EdgeWebView'
 if (Provision-WebView $x64Webview 'https://go.microsoft.com/fwlink/?linkid=2124701' 'x64' $script:X64_MACHINE) {
     Write-Host "WebView2 portable runtime (x64) ready"
@@ -144,7 +211,9 @@ if (Provision-WebView $x64Webview 'https://go.microsoft.com/fwlink/?linkid=21247
 }
 
 $x86Webview = Join-Path $root 'utils/windows/WebviewRuntime/x86/EdgeWebView'
-if (Provision-WebView $x86Webview 'https://go.microsoft.com/fwlink/?linkid=2099617' 'x86' $script:X86_MACHINE) {
+if ((Test-WebViewDir $x86Webview $script:X86_MACHINE) -or (Harvest-SystemWebView $x86Webview $script:X86_MACHINE)) {
+    Write-Host "WebView2 portable runtime (x86) ready"
+} elseif (Provision-WebViewX86FromApi $x86Webview) {
     Write-Host "WebView2 portable runtime (x86) ready"
 } else {
     Write-Warning "X86 WebView2 runtime could not be provisioned; the x86 portable archive will be skipped."
@@ -157,14 +226,21 @@ if (-not (Test-Path "$rpcBase/win64-static/lib/discord-rpc.lib")) {
     Write-Host "Building discord-rpc (win64-static, win32-static) from source..."
     $src = Join-Path $env:RUNNER_TEMP 'discord-rpc-src'
     if (Test-Path $src) { Remove-Item $src -Recurse -Force }
-    git clone --depth 1 --branch v3.4.0 https://github.com/discord/discord-rpc.git $src
+    # --recursive is required: the C sources include rapidjson headers that
+    # live in the thirdparty/rapidjson submodule.
+    git clone --depth 1 --branch v3.4.0 --recursive https://github.com/discord/discord-rpc.git $src
     if ($LASTEXITCODE -ne 0) { throw 'failed to clone discord/discord-rpc' }
     foreach ($spec in @(
         @{ Dir = 'win64-static'; Arch = 'x64' },
         @{ Dir = 'win32-static'; Arch = 'Win32' }
     )) {
         $cfg = Join-Path $env:RUNNER_TEMP ("rpc-build-" + $spec.Arch)
-        cmake -S $src -B $cfg -G "Visual Studio 17 2022" -A $spec.Arch `
+        # No explicit -G: let CMake pick whatever Visual Studio the current
+        # runner image ships (generator numbering changes between images);
+        # -A still selects the architecture. CMAKE_POLICY_VERSION_MINIMUM
+        # keeps CMake 4+ from hard-refusing this pre-3.5 project.
+        cmake -S $src -B $cfg -A $spec.Arch `
+              -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
               -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DDISCORD_BUILD_EXAMPLES=OFF
         if ($LASTEXITCODE -ne 0) { throw "discord-rpc configure failed ($($spec.Arch))" }
         cmake --build $cfg --config Release --target discord-rpc

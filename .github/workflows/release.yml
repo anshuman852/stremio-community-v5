@@ -49,7 +49,7 @@ jobs:
   build-release:
     name: Build, sign & release
     runs-on: windows-latest
-    timeout-minutes: 270
+    timeout-minutes: 350
     env:
       STREMIO_VCPKG_ROOT: 'C:\vcpkg'
     defaults:

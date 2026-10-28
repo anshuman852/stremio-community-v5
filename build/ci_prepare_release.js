@@ -92,6 +92,16 @@ if (!serverVersion) {
     info(`Using server.js version override ${serverVersion}`);
 }
 
+// dl.strem.io only serves the "v"-prefixed path (a plainly pinned version
+// as found in the current manifest 404s on every mirror). Normalize once so
+// both the provisioning download and the published version-details.json URL
+// point at something that actually resolves.
+const bare = serverVersion.replace(/^v/i, "");
+if ("v" + bare !== serverVersion) {
+    info(`Normalized server.js version to ${"v" + bare} (dl.strem.io serves the v-prefixed path)`);
+}
+serverVersion = "v" + bare;
+
 // 4) Version bumps
 const cmakePath = path.join(projectRoot, "CMakeLists.txt");
 let cmake = fs.readFileSync(cmakePath, "utf8");
