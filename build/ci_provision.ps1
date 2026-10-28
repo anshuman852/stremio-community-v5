@@ -240,7 +240,7 @@ if (-not (Test-Path "$rpcBase/win64-static/lib/discord-rpc.lib")) {
         # -A still selects the architecture. CMAKE_POLICY_VERSION_MINIMUM
         # keeps CMake 4+ from hard-refusing this pre-3.5 project.
         cmake -S $src -B $cfg -A $spec.Arch `
-              -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
+              "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
               -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DDISCORD_BUILD_EXAMPLES=OFF
         if ($LASTEXITCODE -ne 0) { throw "discord-rpc configure failed ($($spec.Arch))" }
         cmake --build $cfg --config Release --target discord-rpc
