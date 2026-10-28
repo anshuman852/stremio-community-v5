@@ -5,10 +5,19 @@
 #   4) deps/discord-rpc/{win64,win32}-static  (built from source)
 #
 # Results are cached by the workflow; on a cache hit each section is skipped.
-# When the x86 WebView runtime cannot be provisioned, WEBVIEW_X86_OK=0 is
-# written so later steps skip the x86 portable archive instead of failing.
+# -Arch limits provisioning to one architecture (the CI build matrix runs one
+# leg per arch); 'none' provisions only server.js (the release job, which
+# needs its checksum but builds nothing). When the x86 WebView runtime cannot
+# be provisioned, WEBVIEW_X86_OK=0 is written so later steps skip the x86
+# portable archive instead of failing.
+param(
+    [ValidateSet('x64', 'x86', 'all', 'none')]
+    [string]$Arch = 'all'
+)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+$wantX64 = $Arch -in @('x64', 'all')
+$wantX86 = $Arch -in @('x86', 'all')
 
 function Write-GhEnv([string]$line) {
     Add-Content -Path $env:GITHUB_ENV -Value $line
@@ -102,14 +111,14 @@ if (-not (Test-Path $serverJs) -or (Get-Item $serverJs -ErrorAction SilentlyCont
 
 # ---------------- 2) libmpv dlls ----------------
 $x64dll = Join-Path $root 'deps/libmpv/x86_64/libmpv-2.dll'
-if (-not (Test-Path $x64dll)) {
+if ($wantX64 -and -not (Test-Path $x64dll)) {
     Write-Host "Extracting libmpv-2.dll (x64) from the submodule archive..."
     $rar = Join-Path $root 'deps/libmpv/x86_64/libmpv-2.dll.rar'
     if (-not (Test-Path $rar)) { throw "deps/libmpv/x86_64/libmpv-2.dll.rar missing - is the submodule checked out?" }
     & 'C:\Program Files\7-Zip\7z.exe' x $rar "-o$(Join-Path $root 'deps/libmpv/x86_64')" -y | Out-Null
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $x64dll)) { throw "failed to extract $rar" }
 }
-if (-not (Test-Path (Join-Path $root 'deps/libmpv/i686/libmpv-2.dll'))) {
+if ($wantX86 -and -not (Test-Path (Join-Path $root 'deps/libmpv/i686/libmpv-2.dll'))) {
     throw "deps/libmpv/i686/libmpv-2.dll missing - is the submodule checked out?"
 }
 Write-Host "libmpv dlls ready"
@@ -203,37 +212,49 @@ function Provision-WebViewX86FromApi([string]$targetDir) {
     }
 }
 
-$x64Webview = Join-Path $root 'utils/windows/WebviewRuntime/x64/EdgeWebView'
-if (Provision-WebView $x64Webview 'https://go.microsoft.com/fwlink/?linkid=2124701' 'x64' $script:X64_MACHINE) {
-    Write-Host "WebView2 portable runtime (x64) ready"
-} else {
-    throw "Failed to provision the x64 WebView2 runtime (needed for the portable archive)"
+if ($wantX64) {
+    $x64Webview = Join-Path $root 'utils/windows/WebviewRuntime/x64/EdgeWebView'
+    if (Provision-WebView $x64Webview 'https://go.microsoft.com/fwlink/?linkid=2124701' 'x64' $script:X64_MACHINE) {
+        Write-Host "WebView2 portable runtime (x64) ready"
+    } else {
+        throw "Failed to provision the x64 WebView2 runtime (needed for the portable archive)"
+    }
 }
 
-$x86Webview = Join-Path $root 'utils/windows/WebviewRuntime/x86/EdgeWebView'
-if ((Test-WebViewDir $x86Webview $script:X86_MACHINE) -or (Harvest-SystemWebView $x86Webview $script:X86_MACHINE)) {
-    Write-Host "WebView2 portable runtime (x86) ready"
-} elseif (Provision-WebViewX86FromApi $x86Webview) {
-    Write-Host "WebView2 portable runtime (x86) ready"
-} else {
-    Write-Warning "X86 WebView2 runtime could not be provisioned; the x86 portable archive will be skipped."
-    Write-GhEnv "WEBVIEW_X86_OK=0"
+if ($wantX86) {
+    $x86Webview = Join-Path $root 'utils/windows/WebviewRuntime/x86/EdgeWebView'
+    if ((Test-WebViewDir $x86Webview $script:X86_MACHINE) -or (Harvest-SystemWebView $x86Webview $script:X86_MACHINE)) {
+        Write-Host "WebView2 portable runtime (x86) ready"
+    } elseif (Provision-WebViewX86FromApi $x86Webview) {
+        Write-Host "WebView2 portable runtime (x86) ready"
+    } else {
+        Write-Warning "X86 WebView2 runtime could not be provisioned; the x86 portable archive will be skipped."
+        Write-GhEnv "WEBVIEW_X86_OK=0"
+    }
 }
 
 # ---------------- 4) discord-rpc (static libs) ----------------
 $rpcBase = Join-Path $root 'deps/discord-rpc'
-if (-not (Test-Path "$rpcBase/win64-static/lib/discord-rpc.lib")) {
-    Write-Host "Building discord-rpc (win64-static, win32-static) from source..."
+$rpcSpecs = @()
+if ($wantX64) { $rpcSpecs += @{ Dir = 'win64-static'; Arch = 'x64' } }
+if ($wantX86) { $rpcSpecs += @{ Dir = 'win32-static'; Arch = 'Win32' } }
+$rpcSpecs = @($rpcSpecs | Where-Object { -not (Test-Path "$rpcBase/$($_.Dir)/lib/discord-rpc.lib") })
+if ($rpcSpecs.Count -gt 0) {
+    Write-Host "Building discord-rpc ($(($rpcSpecs | ForEach-Object { $_.Dir }) -join ', ')) from source..."
     $src = Join-Path $env:RUNNER_TEMP 'discord-rpc-src'
-    if (Test-Path $src) { Remove-Item $src -Recurse -Force }
     # --recursive is required: the C sources include rapidjson headers that
-    # live in the thirdparty/rapidjson submodule.
-    git clone --depth 1 --branch v3.4.0 --recursive https://github.com/discord/discord-rpc.git $src
-    if ($LASTEXITCODE -ne 0) { throw 'failed to clone discord/discord-rpc' }
-    foreach ($spec in @(
-        @{ Dir = 'win64-static'; Arch = 'x64' },
-        @{ Dir = 'win32-static'; Arch = 'Win32' }
-    )) {
+    # live in the thirdparty/rapidjson submodule. Retried because runners
+    # occasionally hit transient DNS/connection failures.
+    $cloned = $false
+    foreach ($attempt in 1..3) {
+        if (Test-Path $src) { Remove-Item $src -Recurse -Force }
+        git clone --depth 1 --branch v3.4.0 --recursive https://github.com/discord/discord-rpc.git $src
+        if ($LASTEXITCODE -eq 0) { $cloned = $true; break }
+        Write-Host "git clone attempt $attempt failed; retrying..."
+        Start-Sleep -Seconds (5 * $attempt)
+    }
+    if (-not $cloned) { throw 'failed to clone discord/discord-rpc' }
+    foreach ($spec in $rpcSpecs) {
         $cfg = Join-Path $env:RUNNER_TEMP ("rpc-build-" + $spec.Arch)
         # No explicit -G: let CMake pick whatever Visual Studio the current
         # runner image ships (generator numbering changes between images);
@@ -255,7 +276,7 @@ if (-not (Test-Path "$rpcBase/win64-static/lib/discord-rpc.lib")) {
         New-Item -ItemType Directory -Force -Path "$rpcBase/$($spec.Dir)/include" | Out-Null
         Copy-Item "$src/include/*" "$rpcBase/$($spec.Dir)/include/" -Force -Recurse
     }
-    if (-not (Test-Path "$rpcBase/win64-static/include/discord_rpc.h")) {
+    if (-not (Test-Path "$rpcBase/$($rpcSpecs[0].Dir)/include/discord_rpc.h")) {
         Write-Warning "discord_rpc.h was not found under $src/include; headers in $(Join-Path $src 'include'): $(Get-ChildItem (Join-Path $src 'include') -Name -ErrorAction SilentlyContinue)"
     }
 } else {
