@@ -1,12 +1,12 @@
 {
-  "version": "5.0.34",
+  "version": "5.0.35",
   "description": "Stremio Desktop v5 Community",
   "homepage": "https://github.com/Zaarrg/stremio-desktop-v5",
   "license": "GPL-3.0",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/anshuman852/stremio-community-v5/releases/download/5.0.0-beta.34/Stremio.5.0.34-x64.exe",
-      "hash": "68797b7b7e88f6e69d076aee70df1c77519cf16753909591f22af1af28ccd54b",
+      "url": "https://github.com/anshuman852/stremio-community-v5/releases/download/5.0.0-beta.35/Stremio.5.0.35-x64.exe",
+      "hash": "c8933b77e40f87023490c96b2f903a49e5b6f93cfe48aa140279e38460da31ad",
       "installer": {
         "args": [
           "/S"
@@ -24,8 +24,8 @@
       }
     },
     "32bit": {
-      "url": "https://github.com/anshuman852/stremio-community-v5/releases/download/5.0.0-beta.34/Stremio.5.0.34-x86.exe",
-      "hash": "b273b2d65e2cbc53f9deae150592ba967363231cd080c9dff1962984a109ecb3",
+      "url": "https://github.com/anshuman852/stremio-community-v5/releases/download/5.0.0-beta.35/Stremio.5.0.35-x86.exe",
+      "hash": "1628414424eff69c2bd5bb8c045f3623f0d1a5b92672e2565d1b673bc030801f",
       "installer": {
         "args": [
           "/S"
