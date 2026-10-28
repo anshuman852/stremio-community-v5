@@ -247,7 +247,10 @@ if (-not (Test-Path "$rpcBase/win64-static/lib/discord-rpc.lib")) {
         cmake --build $cfg --config Release --target discord-rpc
         if ($LASTEXITCODE -ne 0) { throw "discord-rpc build failed ($($spec.Arch))" }
         New-Item -ItemType Directory -Force -Path "$rpcBase/$($spec.Dir)/lib" | Out-Null
-        Copy-Item "$cfg/Release/discord-rpc.lib" "$rpcBase/$($spec.Dir)/lib/discord-rpc.lib" -Force
+        # The lib lands in <build>/src/Release; older layouts used <build>/Release.
+        $rpcLib = Get-ChildItem $cfg -Recurse -Filter discord-rpc.lib | Select-Object -First 1
+        if (-not $rpcLib) { throw "discord-rpc.lib not found under $cfg ($($spec.Arch))" }
+        Copy-Item $rpcLib.FullName "$rpcBase/$($spec.Dir)/lib/discord-rpc.lib" -Force
         New-Item -ItemType Directory -Force -Path "$rpcBase/$($spec.Dir)/include" | Out-Null
         Copy-Item "$src/include/*" "$rpcBase/$($spec.Dir)/include/" -Force -Recurse
     }
