@@ -241,6 +241,7 @@ if (-not (Test-Path "$rpcBase/win64-static/lib/discord-rpc.lib")) {
         # keeps CMake 4+ from hard-refusing this pre-3.5 project.
         cmake -S $src -B $cfg -A $spec.Arch `
               "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
+              "-DCLANG_FORMAT_CMD=CLANG_FORMAT_CMD-NOTFOUND" `
               -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DDISCORD_BUILD_EXAMPLES=OFF
         if ($LASTEXITCODE -ne 0) { throw "discord-rpc configure failed ($($spec.Arch))" }
         cmake --build $cfg --config Release --target discord-rpc
