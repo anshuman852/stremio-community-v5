@@ -62,7 +62,7 @@ jobs:
         shell: pwsh
     steps:
       - name: Checkout (with libmpv submodule)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -93,7 +93,7 @@ jobs:
           Write-Host "NSIS ready at $nsis"
 
       - name: Restore provisioned dependencies cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             deps/discord-rpc
@@ -113,7 +113,7 @@ jobs:
           else { ./build/ci_provision.ps1 -Arch $env:ARCH -SkipWebView }
 
       - name: Restore vcpkg cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             C:\vcpkg\downloads
@@ -173,7 +173,7 @@ jobs:
 
       - name: Upload build output
         if: ${{ env.WEBVIEW_X86_OK != '0' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: build-${{ matrix.arch }}-${{ matrix.package }}
           path: utils/Stremio *-${{ matrix.arch }}.${{ matrix.package == 'portable' && '7z' || 'exe' }}
@@ -181,7 +181,7 @@ jobs:
 
       - name: Upload build logs (failure diagnostics)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: build-logs-${{ inputs.git_tag }}-${{ matrix.arch }}
           path: build/logs
@@ -197,7 +197,7 @@ jobs:
         shell: pwsh
     steps:
       - name: Checkout (full history for release notes)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -244,7 +244,7 @@ jobs:
         run: ./build/ci_provision.ps1 -Arch none
 
       - name: Download build outputs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: build-*
           path: utils
@@ -317,7 +317,7 @@ jobs:
 
       - name: Upload artifacts (build-only run)
         if: ${{ !inputs.publish_release }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: Stremio-${{ inputs.git_tag }}-built
           path: |
@@ -336,7 +336,7 @@ jobs:
         shell: bash
     steps:
       - name: Checkout (branch tip, including the release metadata commit)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.ref_name }}
 
